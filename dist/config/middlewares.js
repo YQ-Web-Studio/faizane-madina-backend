@@ -40,6 +40,7 @@ module.exports = [
                 'https://faizane-madina-masjid-southend.github.io',
                 'https://faizanemadinasouthend.co.uk',
                 'https://www.faizanemadinasouthend.co.uk',
+                'https://portal.faizanemadinasouthend.co.uk',
                 'https://193.123.187.241.nip.io',
             ],
         },
