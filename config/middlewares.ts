@@ -38,6 +38,8 @@ module.exports = [
         'http://localhost:1337',
         'https://yusufquresh1.github.io',
         'https://faizane-madina-masjid-southend.github.io',
+        'https://faizanemadinasouthend.co.uk',
+        'https://www.faizanemadinasouthend.co.uk',
         'https://193.123.187.241.nip.io',
       ],
     },
