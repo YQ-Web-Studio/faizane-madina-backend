@@ -10,7 +10,18 @@ const COLLECTION_UID = 'api::timetable.timetable';
 
 export default {
   async afterCreate(event: any) {
-    // Always run on initial creation if a PDF is attached
+    // 🛑 LOOP PROTECTION 🛑
+    // When you click "Publish", Strapi clones the document.
+    // If it's a clone, the JSON data will already exist. Do NOT run the AI.
+    const existingData = event.result?.[JSON_FIELD];
+    const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
+    
+    if (hasData) {
+      strapi.log.info(`[Timetable AI] Publish/Clone action detected. Skipping AI to break loop.`);
+      return;
+    }
+
+    strapi.log.info(`[Timetable AI] Brand new entry detected. Running AI...`);
     await processTimetable(event);
   },
 
@@ -19,32 +30,30 @@ export default {
     
     // Check if the update payload even includes the PDF field
     if (params.data && params.data[PDF_FIELD] !== undefined) {
-      // 1. Fetch the existing database entry BEFORE the update happens
+      // Fetch existing entry to compare
       const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
         populate: [PDF_FIELD]
       });
 
-      // 2. Compare the old PDF ID with the incoming new PDF ID
       const oldFileId = existingEntry?.[PDF_FIELD]?.id;
       const newFileId = getFileId(params.data[PDF_FIELD]);
 
-      // 3. Set a flag so afterUpdate knows whether to run the AI
+      // If IDs are different, the user explicitly clicked "Replace" on the PDF
       if (oldFileId !== newFileId) {
           event.state = { ...event.state, pdfChanged: true };
       } else {
           event.state = { ...event.state, pdfChanged: false };
       }
     } else {
-      // If the field isn't in the payload, the user is just saving text/JSON edits
+      // Field isn't in payload (e.g. Publish action, or manual text edit)
       event.state = { ...event.state, pdfChanged: false };
     }
   },
 
   async afterUpdate(event: any) {
-    // 4. ONLY run the AI if the PDF was actually replaced.
-    // This protects your manual edits and stops the infinite loop.
+    // Only run if beforeUpdate proved the PDF was actually swapped
     if (event.state && event.state.pdfChanged) {
-        strapi.log.info(`[Timetable AI] PDF change detected. Running AI extraction...`);
+        strapi.log.info(`[Timetable AI] PDF explicitly replaced. Running AI extraction...`);
         await processTimetable(event);
     } else {
         strapi.log.info(`[Timetable AI] No PDF change detected. Skipping AI to protect manual edits.`);
@@ -68,7 +77,6 @@ function getFileId(fieldData: any): number | string | null {
 async function processTimetable(event: any) {
   const { result, params } = event;
 
-  // Validation
   if (!params.data || !params.data[PDF_FIELD]) return;
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -84,7 +92,6 @@ async function processTimetable(event: any) {
 
     if (!fileData || fileData.ext !== '.pdf') return;
 
-    // Get File Buffer
     let base64Data: string = "";
     if (fileData.url.startsWith('http')) {
       const response = await fetch(fileData.url);
@@ -99,7 +106,6 @@ async function processTimetable(event: any) {
       base64Data = fileBuffer.toString('base64');
     }
 
-    // Send to Gemini
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
