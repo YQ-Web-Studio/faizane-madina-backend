@@ -10,11 +10,45 @@ const COLLECTION_UID = 'api::timetable.timetable';
 
 export default {
   async afterCreate(event: any) {
+    // Always run on initial creation if a PDF is attached
     await processTimetable(event);
   },
 
+  async beforeUpdate(event: any) {
+    const { params } = event;
+    
+    // Check if the update payload even includes the PDF field
+    if (params.data && params.data[PDF_FIELD] !== undefined) {
+      // 1. Fetch the existing database entry BEFORE the update happens
+      const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
+        populate: [PDF_FIELD]
+      });
+
+      // 2. Compare the old PDF ID with the incoming new PDF ID
+      const oldFileId = existingEntry?.[PDF_FIELD]?.id;
+      const newFileId = getFileId(params.data[PDF_FIELD]);
+
+      // 3. Set a flag so afterUpdate knows whether to run the AI
+      if (oldFileId !== newFileId) {
+          event.state = { ...event.state, pdfChanged: true };
+      } else {
+          event.state = { ...event.state, pdfChanged: false };
+      }
+    } else {
+      // If the field isn't in the payload, the user is just saving text/JSON edits
+      event.state = { ...event.state, pdfChanged: false };
+    }
+  },
+
   async afterUpdate(event: any) {
-    await processTimetable(event);
+    // 4. ONLY run the AI if the PDF was actually replaced.
+    // This protects your manual edits and stops the infinite loop.
+    if (event.state && event.state.pdfChanged) {
+        strapi.log.info(`[Timetable AI] PDF change detected. Running AI extraction...`);
+        await processTimetable(event);
+    } else {
+        strapi.log.info(`[Timetable AI] No PDF change detected. Skipping AI to protect manual edits.`);
+    }
   },
 };
 
@@ -34,17 +68,7 @@ function getFileId(fieldData: any): number | string | null {
 async function processTimetable(event: any) {
   const { result, params } = event;
 
-  // 1. LOOP PROTECTION
-  const currentData = params.data && params.data[JSON_FIELD];
-  if (currentData) {
-    if (Array.isArray(currentData) && currentData.length > 5) return;
-    const isError = Array.isArray(currentData) && currentData[0] && currentData[0].ERROR;
-    if (!isError && Array.isArray(currentData) && currentData.length > 5) {
-       return;
-    }
-  }
-
-  // 2. Validation
+  // Validation
   if (!params.data || !params.data[PDF_FIELD]) return;
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -60,7 +84,7 @@ async function processTimetable(event: any) {
 
     if (!fileData || fileData.ext !== '.pdf') return;
 
-    // 3. Get File Buffer
+    // Get File Buffer
     let base64Data: string = "";
     if (fileData.url.startsWith('http')) {
       const response = await fetch(fileData.url);
@@ -75,7 +99,7 @@ async function processTimetable(event: any) {
       base64Data = fileBuffer.toString('base64');
     }
 
-    // 4. Send to Gemini
+    // Send to Gemini
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
@@ -84,12 +108,15 @@ async function processTimetable(event: any) {
 
     const prompt = `
       You are a data extraction engine.
+      Target Month: ${targetMonth}
       
       STEP 1: SAFETY CHECK
-      Scan the document for a printed Month Name.
-      - IF you find a month name AND it clearly CONTRADICTS the target month "${targetMonth}":
+      Scan the document for printed Month Names.
+      - IF the document is for a single month and it CONTRADICTS "${targetMonth}":
         Return this JSON: [{ "ERROR": "MISMATCH: PDF says [Found Month] but entry is for ${targetMonth}." }]
-      - IF you find NO month name OR it matches "${targetMonth}":
+      - IF the document covers multiple months (e.g., Feb-Mar) and "${targetMonth}" is ONE of those months:
+        Proceed to Step 2.
+      - IF it matches or has no month:
         Proceed to Step 2.
 
       STEP 2: EXTRACTION
@@ -106,11 +133,16 @@ async function processTimetable(event: any) {
         }
       ]
 
-      RULES:
-      1. 100% Accuracy for numbers.
-      2. No leading zeros.
-      3. Keep slashes for multiple times.
-      4. Output ONLY valid JSON.
+      CRITICAL RULES:
+      1. EXACT MONTH FILTERING: If the timetable covers multiple months (like Feb-Mar), you MUST ONLY output the rows that belong to the Target Month ("${targetMonth}"). Completely ignore and drop all rows belonging to the other month.
+      2. DATE FORMAT: The "date" field MUST be an integer representing the standard Gregorian calendar date. 
+         - If the document says "19.2" or "19th Feb", the date is 19. 
+         - Do NOT output decimals like "19.2".
+         - Do NOT use the Islamic date/Ramadan day number as the calendar date.
+      3. 100% Accuracy for numbers.
+      4. No leading zeros.
+      5. Keep slashes for multiple times (e.g., "12.30/1.30").
+      6. Output ONLY a valid JSON array.
     `;
 
     strapi.log.info(`[Timetable AI] Processing PDF for ${targetMonth}...`);
@@ -125,7 +157,7 @@ async function processTimetable(event: any) {
     const cleanJson = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsedData = JSON.parse(cleanJson);
 
-    // 5. Save Result
+    // Save Result
     await strapi.entityService.update(COLLECTION_UID, result.id, {
       data: {
         [JSON_FIELD]: parsedData
