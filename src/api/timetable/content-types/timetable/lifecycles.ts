@@ -10,7 +10,7 @@ const COLLECTION_UID = 'api::timetable.timetable';
 
 export default {
   async afterCreate(event: any) {
-    // 🛑 LOOP PROTECTION 🛑
+    //  LOOP PROTECTION 
     // When you click "Publish", Strapi clones the document.
     // If it's a clone, the JSON data will already exist. Do NOT run the AI.
     const existingData = event.result?.[JSON_FIELD];
@@ -51,12 +51,12 @@ export default {
   },
 
   async afterUpdate(event: any) {
-    // Only run if beforeUpdate proved the PDF was actually swapped
+    // Only run if beforeUpdate proved the PDF/Image was actually swapped
     if (event.state && event.state.pdfChanged) {
-        strapi.log.info(`[Timetable AI] PDF explicitly replaced. Running AI extraction...`);
+        strapi.log.info(`[Timetable AI] File explicitly replaced. Running AI extraction...`);
         await processTimetable(event);
     } else {
-        strapi.log.info(`[Timetable AI] No PDF change detected. Skipping AI to protect manual edits.`);
+        strapi.log.info(`[Timetable AI] No file change detected. Skipping AI to protect manual edits.`);
     }
   },
 };
@@ -90,12 +90,17 @@ async function processTimetable(event: any) {
       where: { id: fileId }
     });
 
-    if (!fileData || fileData.ext !== '.pdf') return;
+    //  UPDATED: Allow PDFs AND standard Image formats
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'];
+    if (!fileData || !allowedExtensions.includes(fileData.ext.toLowerCase())) {
+        strapi.log.warn(`[Timetable AI] Unsupported file type: ${fileData?.ext}. Skipping.`);
+        return;
+    }
 
     let base64Data: string = "";
     if (fileData.url.startsWith('http')) {
       const response = await fetch(fileData.url);
-      if (!response.ok) throw new Error(`Failed to fetch PDF`);
+      if (!response.ok) throw new Error(`Failed to fetch file`);
       const arrayBuffer = await response.arrayBuffer();
       base64Data = Buffer.from(arrayBuffer).toString('base64');
     } else {
@@ -112,14 +117,14 @@ async function processTimetable(event: any) {
     const targetMonth = result.month || "Unknown";
     const targetYear = result.year || "Unknown";
 
-const prompt = `
+    const prompt = `
       You are a data extraction engine.
       Target Month: ${targetMonth}
       
       STEP 1: SAFETY CHECK
       Scan the document for printed Month Names.
       - IF the document is for a single month and it CONTRADICTS "${targetMonth}":
-        Return this JSON: [{ "ERROR": "MISMATCH: PDF says [Found Month] but entry is for ${targetMonth}." }]
+        Return this JSON: [{ "ERROR": "MISMATCH: Document says [Found Month] but entry is for ${targetMonth}." }]
       - IF the document covers multiple months (e.g., Feb-Mar) and "${targetMonth}" is ONE of those months:
         Proceed to Step 2.
       - IF it matches or has no month:
@@ -143,7 +148,7 @@ const prompt = `
       1. EXACT MONTH FILTERING: If the timetable covers multiple months (like Feb-Mar), you MUST ONLY output the rows that belong to the Target Month ("${targetMonth}"). Completely ignore and drop all rows belonging to the other month.
       
       2. DATE EXTRACTION (UNIVERSAL RULE): 
-         - The PDF layout varies. It may have separate "Date" and "Day" columns (e.g., "1" and "MON"), OR it may have a combined "Day/Date" column (e.g., "SUN 1.3").
+         - The layout varies. It may have separate "Date" and "Day" columns (e.g., "1" and "MON"), OR it may have a combined "Day/Date" column (e.g., "SUN 1.3").
          - IF SEPARATE: Use the standard "Date" column number.
          - IF COMBINED: Extract the Gregorian date from the string (e.g., for "SUN 1.3", the date is 1. For "THU 19.2", the date is 19).
          - RAMADAN IGNORE RULE: If you see an extra column with sequential numbers (1, 2... 11, 12) next to a combined "Day/Date", IGNORE IT completely. That is the Islamic date. Only output the Gregorian date for the "date" field.
@@ -157,11 +162,12 @@ const prompt = `
       5. Output ONLY a valid JSON array.
     `;
 
-    strapi.log.info(`[Timetable AI] Processing PDF for ${targetMonth}...`);
+    strapi.log.info(`[Timetable AI] Processing file for ${targetMonth}...`);
     
+    //  UPDATED: Dynamically pass the correct MIME type
     const aiResult = await model.generateContent([
       prompt,
-      { inlineData: { data: base64Data, mimeType: "application/pdf" } },
+      { inlineData: { data: base64Data, mimeType: fileData.mime } },
     ]);
 
     const response = await aiResult.response;
