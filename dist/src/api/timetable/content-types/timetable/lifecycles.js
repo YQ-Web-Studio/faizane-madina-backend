@@ -142,14 +142,20 @@ async function processTimetable(event) {
 
       CRITICAL RULES:
       1. EXACT MONTH FILTERING: If the timetable covers multiple months (like Feb-Mar), you MUST ONLY output the rows that belong to the Target Month ("${targetMonth}"). Completely ignore and drop all rows belonging to the other month.
-      2. DATE FORMAT: The "date" field MUST be an integer representing the standard Gregorian calendar date. 
-         - If the document says "19.2" or "19th Feb", the date is 19. 
-         - Do NOT output decimals like "19.2".
-         - Do NOT use the Islamic date/Ramadan day number as the calendar date.
-      3. 100% Accuracy for numbers.
-      4. No leading zeros.
-      5. Keep slashes for multiple times (e.g., "12.30/1.30").
-      6. Output ONLY a valid JSON array.
+      
+      2. DATE EXTRACTION (UNIVERSAL RULE): 
+         - The PDF layout varies. It may have separate "Date" and "Day" columns (e.g., "1" and "MON"), OR it may have a combined "Day/Date" column (e.g., "SUN 1.3").
+         - IF SEPARATE: Use the standard "Date" column number.
+         - IF COMBINED: Extract the Gregorian date from the string (e.g., for "SUN 1.3", the date is 1. For "THU 19.2", the date is 19).
+         - RAMADAN IGNORE RULE: If you see an extra column with sequential numbers (1, 2... 11, 12) next to a combined "Day/Date", IGNORE IT completely. That is the Islamic date. Only output the Gregorian date for the "date" field.
+         
+      3. COLUMN MAPPING FOR MAGHRIB & ISHA:
+         - There is only ONE column for "Maghrib/ Iftari". Take this single time and duplicate it in BOTH the "start" and "jamaat" fields for maghrib.
+         - The column immediately after Maghrib is "Isha start".
+         - The final column is "Isha Jamaat". Do not shift or mix these up!
+         
+      4. 100% Accuracy for numbers. No leading zeros. Keep slashes for multiple times (e.g., "12.30/1.30").
+      5. Output ONLY a valid JSON array.
     `;
         strapi.log.info(`[Timetable AI] Processing PDF for ${targetMonth}...`);
         const aiResult = await model.generateContent([
