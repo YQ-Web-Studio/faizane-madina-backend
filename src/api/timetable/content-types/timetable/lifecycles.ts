@@ -3,9 +3,9 @@ import fs from "fs";
 import path from "path";
 
 // --- CONFIGURATION ---
-const PDF_FIELD = 'timetableImage'; 
-const JSON_FIELD = 'prayerData';     
-const COLLECTION_UID = 'api::timetable.timetable'; 
+const PDF_FIELD = 'timetableImage';
+const JSON_FIELD = 'prayerData';
+const COLLECTION_UID = 'api::timetable.timetable';
 // ---------------------
 
 export default {
@@ -15,7 +15,7 @@ export default {
     // If it's a clone, the JSON data will already exist. Do NOT run the AI.
     const existingData = event.result?.[JSON_FIELD];
     const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
-    
+
     if (hasData) {
       strapi.log.info(`[Timetable AI] Publish/Clone action detected. Skipping AI to break loop.`);
       return;
@@ -27,7 +27,7 @@ export default {
 
   async beforeUpdate(event: any) {
     const { params } = event;
-    
+
     // Check if the update payload even includes the PDF field
     if (params.data && params.data[PDF_FIELD] !== undefined) {
       // Fetch existing entry to compare
@@ -40,9 +40,9 @@ export default {
 
       // If IDs are different, the user explicitly clicked "Replace" on the PDF
       if (oldFileId !== newFileId) {
-          event.state = { ...event.state, pdfChanged: true };
+        event.state = { ...event.state, pdfChanged: true };
       } else {
-          event.state = { ...event.state, pdfChanged: false };
+        event.state = { ...event.state, pdfChanged: false };
       }
     } else {
       // Field isn't in payload (e.g. Publish action, or manual text edit)
@@ -53,10 +53,10 @@ export default {
   async afterUpdate(event: any) {
     // Only run if beforeUpdate proved the PDF/Image was actually swapped
     if (event.state && event.state.pdfChanged) {
-        strapi.log.info(`[Timetable AI] File explicitly replaced. Running AI extraction...`);
-        await processTimetable(event);
+      strapi.log.info(`[Timetable AI] File explicitly replaced. Running AI extraction...`);
+      await processTimetable(event);
     } else {
-        strapi.log.info(`[Timetable AI] No file change detected. Skipping AI to protect manual edits.`);
+      strapi.log.info(`[Timetable AI] No file change detected. Skipping AI to protect manual edits.`);
     }
   },
 };
@@ -93,8 +93,8 @@ async function processTimetable(event: any) {
     //  UPDATED: Allow PDFs AND standard Image formats
     const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'];
     if (!fileData || !allowedExtensions.includes(fileData.ext.toLowerCase())) {
-        strapi.log.warn(`[Timetable AI] Unsupported file type: ${fileData?.ext}. Skipping.`);
-        return;
+      strapi.log.warn(`[Timetable AI] Unsupported file type: ${fileData?.ext}. Skipping.`);
+      return;
     }
 
     let base64Data: string = "";
@@ -112,7 +112,7 @@ async function processTimetable(event: any) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
 
     const targetMonth = result.month || "Unknown";
     const targetYear = result.year || "Unknown";
@@ -163,7 +163,7 @@ async function processTimetable(event: any) {
     `;
 
     strapi.log.info(`[Timetable AI] Processing file for ${targetMonth}...`);
-    
+
     //  UPDATED: Dynamically pass the correct MIME type
     const aiResult = await model.generateContent([
       prompt,
@@ -181,11 +181,11 @@ async function processTimetable(event: any) {
         [JSON_FIELD]: parsedData
       }
     });
-    
+
     if (parsedData[0]?.ERROR) {
-       strapi.log.warn(`[Timetable AI] BLOCKED: ${parsedData[0].ERROR}`);
+      strapi.log.warn(`[Timetable AI] BLOCKED: ${parsedData[0].ERROR}`);
     } else {
-       strapi.log.info(`[Timetable AI] SUCCESS! Database updated.`);
+      strapi.log.info(`[Timetable AI] SUCCESS! Database updated.`);
     }
 
   } catch (error: any) {

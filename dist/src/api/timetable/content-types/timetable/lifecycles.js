@@ -114,7 +114,7 @@ async function processTimetable(event) {
             base64Data = fileBuffer.toString('base64');
         }
         const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
         const targetMonth = result.month || "Unknown";
         const targetYear = result.year || "Unknown";
         const prompt = `
