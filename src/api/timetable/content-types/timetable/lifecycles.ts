@@ -1,6 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import fs from "fs";
-import path from "path";
 
 // --- CONFIGURATION ---
 const PDF_FIELD = 'timetableImage';
@@ -74,6 +72,7 @@ function getFileId(fieldData: any): number | string | null {
   return null;
 }
 
+
 async function processTimetable(event: any) {
   const { result, params } = event;
 
@@ -104,15 +103,20 @@ async function processTimetable(event: any) {
       const arrayBuffer = await response.arrayBuffer();
       base64Data = Buffer.from(arrayBuffer).toString('base64');
     } else {
-      const publicDir = strapi.dirs.static.public;
-      const filePath = path.join(publicDir, fileData.url);
-      if (!fs.existsSync(filePath)) return;
-      const fileBuffer = fs.readFileSync(filePath);
-      base64Data = fileBuffer.toString('base64');
+      const port = strapi.config.get('server.port') || 1337;
+      const fileUrl = `http://127.0.0.1:${port}${fileData.url}`;
+
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error(`Failed to fetch local file via loopback`);
+      const arrayBuffer = await response.arrayBuffer();
+      base64Data = Buffer.from(arrayBuffer).toString('base64');
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.1-flash-lite-preview",
+      systemInstruction: "You are a data extraction engine. Your job is to extract structured prayer timetables from provided files, performing safety checks for matching month names, and ensuring high precision for time values."
+    });
 
     const targetMonth = result.month || "Unknown";
     const targetYear = result.year || "Unknown";
@@ -155,8 +159,10 @@ async function processTimetable(event: any) {
          
       3. COLUMN MAPPING FOR MAGHRIB & ISHA:
          - There is only ONE column for "Maghrib/ Iftari". Take this single time and duplicate it in BOTH the "start" and "jamaat" fields for maghrib.
-         - The column immediately after Maghrib is "Isha start".
-         - The final column is "Isha Jamaat". Do not shift or mix these up!
+         - ISHA COLUMNS LAYOUT CHECK:
+           - IF the table has TWO columns for Isha (e.g. "Isha Start" and "Isha Jamaat"): Map the first to the "start" field and the second to the "jamaat" field under the "isha" object.
+           - IF the table has ONLY ONE column for Isha (e.g. labeled "Isha" or "Isha Jamaat", with no separate "Isha Start" column): Map that single column to the "jamaat" field, and set the "start" field to an empty string ("").
+           - Under no circumstances should the "start" field in the "isha" object be populated with the Maghrib time. If there is no dedicated "Isha Start" column or time, it MUST be left as an empty string ("").
          
       4. 100% Accuracy for numbers. No leading zeros. Keep slashes for multiple times (e.g., "12.30/1.30").
       5. Output ONLY a valid JSON array.
