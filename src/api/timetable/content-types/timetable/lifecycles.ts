@@ -6,12 +6,36 @@ const JSON_FIELD = 'prayerData';
 const COLLECTION_UID = 'api::timetable.timetable';
 // ---------------------
 
+function sanitizeAndStringifyJSON(data: any, key: string) {
+  if (data[key] === undefined) return;
+  if (data[key] === null || data[key] === '') {
+    data[key] = null;
+    return;
+  }
+  if (typeof data[key] !== 'string') {
+    data[key] = JSON.stringify(data[key]);
+    strapi.log.info(`[Timetable AI] Stringified JSON field: ${key}`);
+  }
+}
+
+function parseJSONSafely(value: any): any {
+  if (typeof value === 'string' && value.trim() !== '') {
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      return value;
+    }
+  }
+  return value;
+}
+
 export default {
   async afterCreate(event: any) {
     //  LOOP PROTECTION 
     // When you click "Publish", Strapi clones the document.
     // If it's a clone, the JSON data will already exist. Do NOT run the AI.
-    const existingData = event.result?.[JSON_FIELD];
+    const rawData = event.result?.[JSON_FIELD];
+    const existingData = parseJSONSafely(rawData);
     const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
 
     if (hasData) {
@@ -26,13 +50,9 @@ export default {
   async beforeCreate(event: any) {
     const { params } = event;
     if (params.data) {
-      const key = params.data[JSON_FIELD] !== undefined ? JSON_FIELD : (params.data['prayer_data'] !== undefined ? 'prayer_data' : null);
-      if (key) {
-        strapi.log.info(`[Timetable AI] beforeCreate Hook: stringifying ${key}`);
-        if (typeof params.data[key] !== 'string') {
-          params.data[key] = JSON.stringify(params.data[key]);
-        }
-      }
+      strapi.log.info(`[Timetable AI] beforeCreate Hook triggered. Keys: ${Object.keys(params.data)}`);
+      sanitizeAndStringifyJSON(params.data, JSON_FIELD);
+      sanitizeAndStringifyJSON(params.data, 'prayer_data');
     }
   },
 
@@ -41,14 +61,8 @@ export default {
       const { params } = event;
       if (params.data) {
         strapi.log.info(`[Timetable AI] beforeUpdate Hook triggered. Keys: ${Object.keys(params.data)}`);
-        const key = params.data[JSON_FIELD] !== undefined ? JSON_FIELD : (params.data['prayer_data'] !== undefined ? 'prayer_data' : null);
-        if (key) {
-          strapi.log.info(`[Timetable AI] beforeUpdate Hook: found ${key}, type is ${typeof params.data[key]}`);
-          if (typeof params.data[key] !== 'string') {
-            params.data[key] = JSON.stringify(params.data[key]);
-            strapi.log.info(`[Timetable AI] beforeUpdate Hook: successfully stringified ${key}`);
-          }
-        }
+        sanitizeAndStringifyJSON(params.data, JSON_FIELD);
+        sanitizeAndStringifyJSON(params.data, 'prayer_data');
       }
     } catch (error: any) {
       strapi.log.error(`[Timetable AI] beforeUpdate Error: ${error.message}`);
@@ -56,7 +70,8 @@ export default {
   },
 
   async afterUpdate(event: any) {
-    const existingData = event.result?.[JSON_FIELD];
+    const rawData = event.result?.[JSON_FIELD];
+    const existingData = parseJSONSafely(rawData);
     const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
 
     if (!hasData) {
