@@ -24,26 +24,36 @@ export default {
   },
 
   async beforeUpdate(event: any) {
-    const { params } = event;
+    try {
+      const { params } = event;
 
-    // Check if the update payload even includes the PDF field
-    if (params.data && params.data[PDF_FIELD] !== undefined) {
-      // Fetch existing entry to compare
-      const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
-        populate: [PDF_FIELD]
-      });
+      // Check if the update payload even includes the PDF field
+      if (params.data && params.data[PDF_FIELD] !== undefined) {
+        // Fetch existing entry to compare
+        if (!params.where || !params.where.id) {
+            event.state = { ...event.state, pdfChanged: false };
+            return;
+        }
 
-      const oldFileId = existingEntry?.[PDF_FIELD]?.id;
-      const newFileId = getFileId(params.data[PDF_FIELD]);
+        const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
+          populate: [PDF_FIELD]
+        });
 
-      // If IDs are different, the user explicitly clicked "Replace" on the PDF
-      if (oldFileId !== newFileId) {
-        event.state = { ...event.state, pdfChanged: true };
+        const oldFileId = existingEntry?.[PDF_FIELD]?.id;
+        const newFileId = getFileId(params.data[PDF_FIELD]);
+
+        // If IDs are different, the user explicitly clicked "Replace" on the PDF
+        if (oldFileId !== newFileId) {
+          event.state = { ...event.state, pdfChanged: true };
+        } else {
+          event.state = { ...event.state, pdfChanged: false };
+        }
       } else {
+        // Field isn't in payload (e.g. Publish action, or manual text edit)
         event.state = { ...event.state, pdfChanged: false };
       }
-    } else {
-      // Field isn't in payload (e.g. Publish action, or manual text edit)
+    } catch (error: any) {
+      strapi.log.error(`[Timetable AI] beforeUpdate Error: ${error.message}`);
       event.state = { ...event.state, pdfChanged: false };
     }
   },
