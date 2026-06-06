@@ -194,7 +194,7 @@ async function processTimetable(event: any) {
     // Save Result
     await strapi.entityService.update(COLLECTION_UID, result.id, {
       data: {
-        [JSON_FIELD]: parsedData
+        [JSON_FIELD]: JSON.stringify(parsedData)
       }
     });
 
