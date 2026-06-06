@@ -33,49 +33,23 @@ export default {
   async beforeUpdate(event: any) {
     try {
       const { params } = event;
-
       if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
         params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
       }
-
-      // Check if the update payload even includes the PDF field
-      if (params.data && params.data[PDF_FIELD] !== undefined) {
-        // Fetch existing entry to compare
-        if (!params.where || !params.where.id) {
-            event.state = { ...event.state, pdfChanged: false };
-            return;
-        }
-
-        const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
-          populate: [PDF_FIELD]
-        });
-
-        const oldFileId = existingEntry?.[PDF_FIELD]?.id;
-        const newFileId = getFileId(params.data[PDF_FIELD]);
-
-        // If IDs are different, the user explicitly clicked "Replace" on the PDF
-        if (oldFileId !== newFileId) {
-          event.state = { ...event.state, pdfChanged: true };
-        } else {
-          event.state = { ...event.state, pdfChanged: false };
-        }
-      } else {
-        // Field isn't in payload (e.g. Publish action, or manual text edit)
-        event.state = { ...event.state, pdfChanged: false };
-      }
     } catch (error: any) {
       strapi.log.error(`[Timetable AI] beforeUpdate Error: ${error.message}`);
-      event.state = { ...event.state, pdfChanged: false };
     }
   },
 
   async afterUpdate(event: any) {
-    // Only run if beforeUpdate proved the PDF/Image was actually swapped
-    if (event.state && event.state.pdfChanged) {
-      strapi.log.info(`[Timetable AI] File explicitly replaced. Running AI extraction...`);
+    const existingData = event.result?.[JSON_FIELD];
+    const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
+
+    if (!hasData) {
+      strapi.log.info(`[Timetable AI] prayerData is empty. Running AI extraction...`);
       await processTimetable(event);
     } else {
-      strapi.log.info(`[Timetable AI] No file change detected. Skipping AI to protect manual edits.`);
+      strapi.log.info(`[Timetable AI] prayerData already has data. Skipping AI to protect manual edits.`);
     }
   },
 };
