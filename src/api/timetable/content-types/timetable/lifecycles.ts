@@ -23,9 +23,20 @@ export default {
     await processTimetable(event);
   },
 
+  async beforeCreate(event: any) {
+    const { params } = event;
+    if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
+      params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
+    }
+  },
+
   async beforeUpdate(event: any) {
     try {
       const { params } = event;
+
+      if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
+        params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
+      }
 
       // Check if the update payload even includes the PDF field
       if (params.data && params.data[PDF_FIELD] !== undefined) {
