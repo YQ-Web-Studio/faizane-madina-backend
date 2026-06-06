@@ -25,16 +25,30 @@ export default {
 
   async beforeCreate(event: any) {
     const { params } = event;
-    if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
-      params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
+    if (params.data) {
+      const key = params.data[JSON_FIELD] !== undefined ? JSON_FIELD : (params.data['prayer_data'] !== undefined ? 'prayer_data' : null);
+      if (key) {
+        strapi.log.info(`[Timetable AI] beforeCreate Hook: stringifying ${key}`);
+        if (typeof params.data[key] !== 'string') {
+          params.data[key] = JSON.stringify(params.data[key]);
+        }
+      }
     }
   },
 
   async beforeUpdate(event: any) {
     try {
       const { params } = event;
-      if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
-        params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
+      if (params.data) {
+        strapi.log.info(`[Timetable AI] beforeUpdate Hook triggered. Keys: ${Object.keys(params.data)}`);
+        const key = params.data[JSON_FIELD] !== undefined ? JSON_FIELD : (params.data['prayer_data'] !== undefined ? 'prayer_data' : null);
+        if (key) {
+          strapi.log.info(`[Timetable AI] beforeUpdate Hook: found ${key}, type is ${typeof params.data[key]}`);
+          if (typeof params.data[key] !== 'string') {
+            params.data[key] = JSON.stringify(params.data[key]);
+            strapi.log.info(`[Timetable AI] beforeUpdate Hook: successfully stringified ${key}`);
+          }
+        }
       }
     } catch (error: any) {
       strapi.log.error(`[Timetable AI] beforeUpdate Error: ${error.message}`);
