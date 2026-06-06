@@ -1,11 +1,6 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const generative_ai_1 = require("@google/generative-ai");
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
 // --- CONFIGURATION ---
 const PDF_FIELD = 'timetableImage';
 const JSON_FIELD = 'prayerData';
@@ -26,38 +21,33 @@ exports.default = {
         strapi.log.info(`[Timetable AI] Brand new entry detected. Running AI...`);
         await processTimetable(event);
     },
-    async beforeUpdate(event) {
-        var _a;
+    async beforeCreate(event) {
         const { params } = event;
-        // Check if the update payload even includes the PDF field
-        if (params.data && params.data[PDF_FIELD] !== undefined) {
-            // Fetch existing entry to compare
-            const existingEntry = await strapi.entityService.findOne(COLLECTION_UID, params.where.id, {
-                populate: [PDF_FIELD]
-            });
-            const oldFileId = (_a = existingEntry === null || existingEntry === void 0 ? void 0 : existingEntry[PDF_FIELD]) === null || _a === void 0 ? void 0 : _a.id;
-            const newFileId = getFileId(params.data[PDF_FIELD]);
-            // If IDs are different, the user explicitly clicked "Replace" on the PDF
-            if (oldFileId !== newFileId) {
-                event.state = { ...event.state, pdfChanged: true };
-            }
-            else {
-                event.state = { ...event.state, pdfChanged: false };
+        if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
+            params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
+        }
+    },
+    async beforeUpdate(event) {
+        try {
+            const { params } = event;
+            if (params.data && params.data[JSON_FIELD] !== undefined && typeof params.data[JSON_FIELD] !== 'string') {
+                params.data[JSON_FIELD] = JSON.stringify(params.data[JSON_FIELD]);
             }
         }
-        else {
-            // Field isn't in payload (e.g. Publish action, or manual text edit)
-            event.state = { ...event.state, pdfChanged: false };
+        catch (error) {
+            strapi.log.error(`[Timetable AI] beforeUpdate Error: ${error.message}`);
         }
     },
     async afterUpdate(event) {
-        // Only run if beforeUpdate proved the PDF/Image was actually swapped
-        if (event.state && event.state.pdfChanged) {
-            strapi.log.info(`[Timetable AI] File explicitly replaced. Running AI extraction...`);
+        var _a;
+        const existingData = (_a = event.result) === null || _a === void 0 ? void 0 : _a[JSON_FIELD];
+        const hasData = Array.isArray(existingData) && existingData.length > 0 && !existingData[0].ERROR;
+        if (!hasData) {
+            strapi.log.info(`[Timetable AI] prayerData is empty. Running AI extraction...`);
             await processTimetable(event);
         }
         else {
-            strapi.log.info(`[Timetable AI] No file change detected. Skipping AI to protect manual edits.`);
+            strapi.log.info(`[Timetable AI] prayerData already has data. Skipping AI to protect manual edits.`);
         }
     },
 };
@@ -106,15 +96,19 @@ async function processTimetable(event) {
             base64Data = Buffer.from(arrayBuffer).toString('base64');
         }
         else {
-            const publicDir = strapi.dirs.static.public;
-            const filePath = path_1.default.join(publicDir, fileData.url);
-            if (!fs_1.default.existsSync(filePath))
-                return;
-            const fileBuffer = fs_1.default.readFileSync(filePath);
-            base64Data = fileBuffer.toString('base64');
+            const port = strapi.config.get('server.port') || 1337;
+            const fileUrl = `http://127.0.0.1:${port}${fileData.url}`;
+            const response = await fetch(fileUrl);
+            if (!response.ok)
+                throw new Error(`Failed to fetch local file via loopback`);
+            const arrayBuffer = await response.arrayBuffer();
+            base64Data = Buffer.from(arrayBuffer).toString('base64');
         }
         const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-3.1-flash-lite-preview",
+            systemInstruction: "You are a data extraction engine. Your job is to extract structured prayer timetables from provided files, performing safety checks for matching month names, and ensuring high precision for time values."
+        });
         const targetMonth = result.month || "Unknown";
         const targetYear = result.year || "Unknown";
         const prompt = `
@@ -155,8 +149,10 @@ async function processTimetable(event) {
          
       3. COLUMN MAPPING FOR MAGHRIB & ISHA:
          - There is only ONE column for "Maghrib/ Iftari". Take this single time and duplicate it in BOTH the "start" and "jamaat" fields for maghrib.
-         - The column immediately after Maghrib is "Isha start".
-         - The final column is "Isha Jamaat". Do not shift or mix these up!
+         - ISHA COLUMNS LAYOUT CHECK:
+           - IF the table has TWO columns for Isha (e.g. "Isha Start" and "Isha Jamaat"): Map the first to the "start" field and the second to the "jamaat" field under the "isha" object.
+           - IF the table has ONLY ONE column for Isha (e.g. labeled "Isha" or "Isha Jamaat", with no separate "Isha Start" column): Map that single column to BOTH the "start" and "jamaat" fields under the "isha" object.
+           - Under no circumstances should the "start" field in the "isha" object be populated with the Maghrib time.
          
       4. 100% Accuracy for numbers. No leading zeros. Keep slashes for multiple times (e.g., "12.30/1.30").
       5. Output ONLY a valid JSON array.
@@ -174,7 +170,7 @@ async function processTimetable(event) {
         // Save Result
         await strapi.entityService.update(COLLECTION_UID, result.id, {
             data: {
-                [JSON_FIELD]: parsedData
+                [JSON_FIELD]: JSON.stringify(parsedData)
             }
         });
         if ((_a = parsedData[0]) === null || _a === void 0 ? void 0 : _a.ERROR) {
