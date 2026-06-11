@@ -3,6 +3,7 @@ module.exports = [
   {
     name: 'strapi::security',
     config: {
+      frameguard: false,
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
@@ -21,6 +22,7 @@ module.exports = [
             'market-assets.strapi.io',
             'res.cloudinary.com',
           ],
+          'frame-ancestors': ["'self'", 'https://yqwebstudio.com', 'https://*.yqwebstudio.com'],
           upgradeInsecureRequests: null,
         },
       },
