@@ -144,13 +144,14 @@ async function processTimetable(event) {
       You are a data extraction engine.
       Target Month: ${targetMonth}
       
-      STEP 1: SAFETY CHECK
-      Scan the document for printed Month Names.
-      - IF the document is for a single month and it CONTRADICTS "${targetMonth}":
-        Return this JSON: [{ "ERROR": "MISMATCH: Document says [Found Month] but entry is for ${targetMonth}." }]
-      - IF the document covers multiple months (e.g., Feb-Mar) and "${targetMonth}" is ONE of those months:
-        Proceed to Step 2.
-      - IF it matches or has no month:
+      STEP 1: SAFETY CHECK (GREGORIAN MONTH MATCHING)
+      Scan the document for printed GREGORIAN month names (January, February, March, April, May, June, July, August, September, October, November, December, or abbreviations like Jan, Feb, Mar, etc.).
+      - IMPORTANT: Islamic / Hijri months (such as Muharram, Safar, Rabi ul Awal / Rabi al-Awwal, Rabi ul Thani / Rabi al-Thani, Jumada, Rajab, Sha'ban, Ramadan, Shawwal, Dhul Qadah, Dhul Hijjah, etc.) are frequently printed alongside Gregorian months. IGNORE Islamic / Hijri months for this check.
+      - IF the document explicitly mentions "${targetMonth}" anywhere (e.g. "${targetMonth.toUpperCase()} 2026", "${targetMonth}", "${targetMonth.slice(0, 3)}", or multi-month like "AUG-SEP"):
+        It is a MATCH. Proceed to Step 2.
+      - IF the document only has a DIFFERENT Gregorian month (e.g. explicitly says "August" or "October" with no mention of "${targetMonth}"):
+        Return this JSON: [{ "ERROR": "MISMATCH: Document says [Found Gregorian Month] but entry is for ${targetMonth}." }]
+      - IF no Gregorian month is found or if it matches:
         Proceed to Step 2.
 
       STEP 2: EXTRACTION
@@ -159,11 +160,11 @@ async function processTimetable(event) {
         {
           "date": 1,
           "day": "MON",
-          "fajr": { "start": "5.39", "jamaat": "7.00" },
-          "dhuhar": { "start": "11.47", "jamaat": "12.30/1.30" },
-          "asr": { "start": "2.08", "jamaat": "2.30" },
-          "maghrib": { "start": "3.53", "jamaat": "3.53" },
-          "isha": { "start": "5.53", "jamaat": "7.00" }
+          "fajr": { "start": "4.04", "jamaat": "5.30" },
+          "dhuhar": { "start": "12.58", "jamaat": "1.30" },
+          "asr": { "start": "5.39", "jamaat": "6.30" },
+          "maghrib": { "start": "7.48", "jamaat": "7.48" },
+          "isha": { "start": "9.45", "jamaat": "9.45" }
         }
       ]
 
@@ -175,16 +176,21 @@ async function processTimetable(event) {
          - IF SEPARATE: Use the standard "Date" column number.
          - IF COMBINED: Extract the Gregorian date from the string (e.g., for "SUN 1.3", the date is 1. For "THU 19.2", the date is 19).
          - RAMADAN IGNORE RULE: If you see an extra column with sequential numbers (1, 2... 11, 12) next to a combined "Day/Date", IGNORE IT completely. That is the Islamic date. Only output the Gregorian date for the "date" field.
+
+      3. DHAHWA-E-KUBRA / ZAWAL IGNORE RULE:
+         - Columns labeled "Dhahwa-e-Kubra", "Zawal", or "Nisf un-Nahar" are midday / Islamic fasting calculation times, NOT Dhuhar Start.
+         - IGNORE "Dhahwa-e-Kubra" completely.
+         - The "dhuhar.start" field MUST be extracted from the column labeled "Dhuhar Start" (e.g., 12.58, NOT 11.55).
          
-      3. COLUMN MAPPING FOR MAGHRIB & ISHA:
+      4. COLUMN MAPPING FOR MAGHRIB & ISHA:
          - There is only ONE column for "Maghrib/ Iftari". Take this single time and duplicate it in BOTH the "start" and "jamaat" fields for maghrib.
          - ISHA COLUMNS LAYOUT CHECK:
            - IF the table has TWO columns for Isha (e.g. "Isha Start" and "Isha Jamaat"): Map the first to the "start" field and the second to the "jamaat" field under the "isha" object.
            - IF the table has ONLY ONE column for Isha (e.g. labeled "Isha" or "Isha Jamaat", with no separate "Isha Start" column): Map that single column to BOTH the "start" and "jamaat" fields under the "isha" object.
            - Under no circumstances should the "start" field in the "isha" object be populated with the Maghrib time.
          
-      4. 100% Accuracy for numbers. No leading zeros. Keep slashes for multiple times (e.g., "12.30/1.30").
-      5. Output ONLY a valid JSON array.
+      5. 100% Accuracy for numbers. No leading zeros. Keep slashes for multiple times (e.g., "12.30/1.30" or "1.30/2.30").
+      6. Output ONLY a valid JSON array.
     `;
         strapi.log.info(`[Timetable AI] Processing file for ${targetMonth}...`);
         //  UPDATED: Dynamically pass the correct MIME type
