@@ -1,0 +1,16 @@
+#!/bin/sh
+branch="$(git symbolic-ref --short HEAD 2>/dev/null)"
+
+if [ "$branch" = "main" ]; then
+  echo "❌ Direct push to 'main' is blocked. Please branch off and open a Pull Request."
+  exit 1
+fi
+
+valid_branch_regex="^(feat|fix|test|refactor|perf|chore|docs|ci|hotfix)/((FMMS-[0-9]+-)?[a-z0-9-]+)$"
+if ! echo "$branch" | grep -Eq "$valid_branch_regex"; then
+  echo "❌ Invalid branch name: '$branch'"
+  echo "Branch names must follow: <type>/<FMMS-TICKET>-<description> or <type>/<description>"
+  echo "Allowed types: feat, fix, test, refactor, perf, chore, docs, ci, hotfix"
+  echo "Example: feat/FMMS-12-prayer-notifications"
+  exit 1
+fi

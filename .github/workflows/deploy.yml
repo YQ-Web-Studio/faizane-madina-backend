@@ -1,0 +1,35 @@
+name: Deploy Strapi to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: SSH Remote Pull & PM2 Reload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH and Deploy to VPS
+        if: ${{ env.SERVER_SSH_KEY != '' }}
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST || '193.123.187.241' }}
+          SERVER_USER: ${{ secrets.SERVER_USER || 'ubuntu' }}
+          REMOTE_DIR: /home/ubuntu/faizan-e-madina-backend
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "
+            cd $REMOTE_DIR &&
+            git pull origin main &&
+            npm install --omit=dev &&
+            pm2 reload ecosystem.config.js --update-env &&
+            pm2 status
+          "
+          sleep 5
+          curl -s -f https://portal.faizanemadinasouthend.co.uk/_health && echo "✅ Deployment verified!"
