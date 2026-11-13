@@ -12,7 +12,13 @@
     "start": "strapi start",
     "strapi": "strapi",
     "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:api": "playwright test",
+    "deploy:server": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-server.ps1",
+    "prepare": "husky"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -31,10 +37,19 @@
     "styled-components": "^6.0.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^20.19.25",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "typescript": "^5"
+    "eslint": "^10.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^2.1.9"
   },
   "engines": {
     "node": ">=18.0.0 <=22.x.x",
@@ -43,5 +58,10 @@
   "strapi": {
     "uuid": "d578e0a6-eba0-4839-b3db-08b7f33a98a4",
     "installId": "98a91e16a71b95b02a290bb01a0f950eb6a63814dcbbfe8e4327e35b358e309f"
+  },
+  "lint-staged": {
+    "*.{ts,js}": [
+      "eslint --fix"
+    ]
   }
 }

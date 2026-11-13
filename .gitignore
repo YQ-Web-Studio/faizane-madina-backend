@@ -132,3 +132,5 @@ exports
 ecosystem.config.js
 
 .cache/
+playwright-report/
+test-results/
