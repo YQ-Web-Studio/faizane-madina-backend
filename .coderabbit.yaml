@@ -1,0 +1,57 @@
+﻿# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit Configuration for Faizane Madina Masjid Southend Backend (Strapi v5)
+language: "en-US"
+tone_instructions: "Be concise, rigorous, and direct. Focus on Strapi v5 best practices, TypeScript safety, database integrity, and automated testing."
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  pre_merge_checks:
+    issue_assessment:
+      mode: "warning"
+
+knowledge_base:
+  jira:
+    project_keys:
+      - "DQP"
+      - "MA"
+      - "FMMS"
+      - "YQWS"
+
+chat:
+  auto_reply: true
+
+path_instructions:
+  - path: "**/*"
+    instructions: |
+      You are an expert Strapi v5, TypeScript, and PostgreSQL backend code reviewer for Faizane Madina Masjid Southend.
+      Enforce the following non-negotiable project rules:
+
+      ### MANDATORY TICKET SCOPE & PRE-EXISTING CODE RULE:
+      1. Contextual Verification:
+         - Cross-reference the PR title and description with the referenced Jira ticket ([FMMS-XX]).
+         - Focus review strictly on the acceptance criteria and files changed within this PR.
+      2. Zero Blocking on Pre-Existing Code:
+         - You MUST NEVER request changes, post blocking inline comments, or block PR approval for issues located in unchanged lines or pre-existing code that was not introduced or worsened by this PR.
+         - If you identify pre-existing bugs or tech debt outside the PR scope, document them ONLY under an informational section in the summary titled "Pre-existing issues (follow-up ticket)".
+      3. Actionable Regressions Only:
+         - Request changes ONLY if this PR's diff directly introduces a bug, regression, database syntax issue, or broken test.
+
+      ### BACKEND ARCHITECTURAL INVARIANTS:
+      1. Timetable JSON Safeguard:
+         - Ensure prayer timetable array data remains safely stringified before database write (`beforeCreate`, `beforeUpdate`) to prevent PostgreSQL JSON syntax crashes.
+      2. Deployment Safety:
+         - Changes must be compatible with PM2 reload (`ecosystem.config.js`) and the automated SSH deployment pipeline.
+      3. API Smoke Testing:
+         - Any content type or API schema changes must be covered by Playwright API smoke tests in `tests/api/`.
+      4. PR Convention:
+         - PR titles must follow: `[FMMS-XX] type(scope): description`.
