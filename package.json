@@ -44,12 +44,14 @@
     "@types/node": "^20.19.25",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "typescript": "^5",
     "typescript-eslint": "^8.72.2",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=18.0.0 <=22.x.x",
