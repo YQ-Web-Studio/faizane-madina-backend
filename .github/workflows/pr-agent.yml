@@ -67,14 +67,14 @@ jobs:
           if [ "$HAS_ACTIVE_FINDINGS" = "true" ]; then
             if [ "$LATEST_STATE" != "CHANGES_REQUESTED" ]; then
               echo "Active findings identified. Submitting Changes Requested review..."
-              gh pr review "$PR_NUMBER" --request-changes --body "🤖 **PR-Agent Review Verdict: Changes Requested**"$'\n\n'"Actionable concerns or potential regressions were identified in this pull request. Please review the inline suggestions and comments above, apply the fixes, and push an update for re-evaluation."
+              gh pr review "$PR_NUMBER" --repo "${{ github.repository }}" --request-changes --body "🤖 **PR-Agent Review Verdict: Changes Requested**"$'\n\n'"Actionable concerns or potential regressions were identified in this pull request. Please review the inline suggestions and comments above, apply the fixes, and push an update for re-evaluation."
             else
               echo "Review already in CHANGES_REQUESTED state."
             fi
           else
             if [ "$LATEST_STATE" != "APPROVED" ]; then
               echo "No active findings detected. Submitting Approval review..."
-              gh pr review "$PR_NUMBER" --approve --body "🤖 **PR-Agent Review Verdict: Approved**"$'\n\n'"All checks, quality gates, and code review criteria passed with no actionable concerns found."
+              gh pr review "$PR_NUMBER" --repo "${{ github.repository }}" --approve --body "🤖 **PR-Agent Review Verdict: Approved**"$'\n\n'"All checks, quality gates, and code review criteria passed with no actionable concerns found."
             else
               echo "Review already in APPROVED state."
             fi

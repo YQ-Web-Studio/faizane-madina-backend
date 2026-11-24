@@ -30,7 +30,9 @@ test.describe("Strapi API Smoke Tests", () => {
   });
 
   test("GET /admin serves Strapi Admin panel HTML", async ({ request }) => {
-    const response = await request.get("/admin");
+    const response = await request.get("/admin", {
+      headers: { "Accept": "text/html,application/xhtml+xml" },
+    });
     expect(response.status()).toBe(200);
     const html = await response.text();
     expect(html).toContain("<!DOCTYPE html>");
