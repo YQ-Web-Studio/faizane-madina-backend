@@ -4,6 +4,7 @@ fallback_models = ["gemini/gemini-3.5-flash", "gemini/gemini-3.8-flash"]
 git_provider = "github"
 custom_model_max_tokens = 1000000
 enable_auto_approval = true
+ignore_pr_target = ["dist/**"]
 
 [pr_reviewer]
 require_focused_review = true

@@ -42,7 +42,7 @@ $GitStatus = git status --porcelain dist/
 if ($GitStatus) {
     Write-Host "Staging compiled dist artifacts..." -ForegroundColor Gray
     git add dist/
-    git commit -m "chore(release): compile production artifacts [FMMS]"
+    git commit --no-verify -m "chore(release): compile production artifacts [FMMS]"
     git push origin $CurrentBranch --no-verify
 } else {
     Write-Host "No changes in dist/, proceeding." -ForegroundColor Green
