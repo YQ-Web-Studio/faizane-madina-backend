@@ -26,7 +26,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
           config.model: "gemini/gemini-flash-latest"
           config.custom_model_max_tokens: "1000000"
-          config.fallback_models: '["gemini/gemini-2.5-flash"]'
+          config.fallback_models: '["gemini/gemini-3.5-flash", "gemini/gemini-3.8-flash"]'
           GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
           github_action_config.pr_actions: "['opened', 'synchronize', 'reopened', 'ready_for_review']"
           github_action_config.auto_review: "true"
