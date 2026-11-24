@@ -1,5 +1,5 @@
 [config]
-model = "gemini/gemini-2.0-flash"
+model = "gemini/gemini-3.8-flash"
 fallback_models = []
 git_provider = "github"
 custom_model_max_tokens = 1000000

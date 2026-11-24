@@ -24,7 +24,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
-          config.model: "gemini/gemini-2.0-flash"
+          config.model: "gemini/gemini-3.8-flash"
           config.custom_model_max_tokens: "1000000"
           config.fallback_models: '[]'
           GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
