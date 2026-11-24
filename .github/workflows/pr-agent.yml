@@ -27,6 +27,7 @@ jobs:
           config.model: "gemini/gemini-2.0-flash"
           config.fallback_models: '[]'
           GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
+          github_action_config.pr_actions: "['opened', 'synchronize', 'reopened']"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "false"
