@@ -24,9 +24,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
-          config.model: "gemini/gemini-3.8-flash"
+          config.model: "gemini/gemini-2.5-flash"
           config.custom_model_max_tokens: "1000000"
-          config.fallback_models: '[]'
+          config.fallback_models: '["gemini/gemini-3.8-flash", "gemini/gemini-3.1-flash-lite"]'
           GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
           github_action_config.pr_actions: "['opened', 'synchronize', 'reopened']"
           github_action_config.auto_review: "true"
