@@ -3,13 +3,18 @@ model = "gemini/gemini-flash-latest"
 fallback_models = ["gemini/gemini-3.5-flash", "gemini/gemini-3.8-flash"]
 git_provider = "github"
 custom_model_max_tokens = 1000000
+enable_auto_approval = true
 
 [pr_reviewer]
 require_focused_review = true
 require_score_review = true
 require_tests_review = true
 require_security_review = true
-enable_auto_approval = false
+require_merge_recommendation = true
+require_risk_assessment = true
+inline_code_comments = true
+inline_key_issues = true
+enable_auto_approval = true
 extra_instructions = """
 You are an expert Strapi v5, TypeScript, and PostgreSQL backend code reviewer for Faizane Madina Masjid Southend.
 Enforce the following non-negotiable project rules:
@@ -37,6 +42,8 @@ Enforce the following non-negotiable project rules:
 
 [pr_code_suggestions]
 num_code_suggestions = 4
+committable_code_suggestions = true
+commitable_code_suggestions = true
 extra_instructions = """
 Suggest changes only for actionable bugs, logic errors, or critical security vulnerabilities in the modified code. Do not suggest style-only or subjective refactorings.
 """

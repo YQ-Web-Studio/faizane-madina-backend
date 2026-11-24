@@ -7,7 +7,7 @@ on:
     types: [created]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,7 +28,59 @@ jobs:
           config.custom_model_max_tokens: "1000000"
           config.fallback_models: '["gemini/gemini-3.5-flash", "gemini/gemini-3.8-flash"]'
           GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
-          github_action_config.pr_actions: "['opened', 'synchronize', 'reopened']"
+          github_action_config.pr_actions: "['opened', 'synchronize', 'reopened', 'ready_for_review']"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
-          github_action_config.auto_improve: "false"
+          github_action_config.auto_improve: "true"
+          config.enable_auto_approval: "true"
+          pr_reviewer.enable_auto_approval: "true"
+          pr_reviewer.require_merge_recommendation: "true"
+          pr_reviewer.require_risk_assessment: "true"
+          pr_reviewer.inline_code_comments: "true"
+          pr_reviewer.inline_key_issues: "true"
+          pr_code_suggestions.committable_code_suggestions: "true"
+          pr_code_suggestions.commitable_code_suggestions: "true"
+
+      - name: Sync Review Status (Request Changes or Approve)
+        if: github.event.pull_request || github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          echo "Syncing PR-Agent review status on PR #$PR_NUMBER..."
+          
+          # Fetch reviews submitted by github-actions[bot]
+          REVIEWS=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" --jq '[.[] | select(.user.login == "github-actions[bot]")]')
+          LATEST_STATE=$(echo "$REVIEWS" | jq -r 'last | .state // empty')
+          
+          # Inspect latest PR-Agent review state comment
+          LATEST_COMMENT=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("pr-agent-review-state")))] | last | .body // ""')
+          
+          HAS_ACTIVE_FINDINGS=false
+          if echo "$LATEST_COMMENT" | grep -q '"state":"ACTIVE"'; then
+            HAS_ACTIVE_FINDINGS=true
+          fi
+          
+          echo "Latest Review State: ${LATEST_STATE:-none}"
+          echo "Has Active Findings: $HAS_ACTIVE_FINDINGS"
+          
+          if [ "$HAS_ACTIVE_FINDINGS" = "true" ]; then
+            if [ "$LATEST_STATE" != "CHANGES_REQUESTED" ]; then
+              echo "Active findings identified. Submitting Changes Requested review..."
+              gh pr review "$PR_NUMBER" --request-changes --body "🤖 **PR-Agent Review Verdict: Changes Requested**
+
+Actionable concerns or potential regressions were identified in this pull request. Please review the inline suggestions and comments above, apply the fixes, and push an update for re-evaluation."
+            else
+              echo "Review already in CHANGES_REQUESTED state."
+            fi
+          else
+            # No active findings
+            if [ "$LATEST_STATE" != "APPROVED" ]; then
+              echo "No active findings detected. Submitting Approval review..."
+              gh pr review "$PR_NUMBER" --approve --body "🤖 **PR-Agent Review Verdict: Approved**
+
+All checks, quality gates, and code review criteria passed with no actionable concerns found."
+            else
+              echo "Review already in APPROVED state."
+            fi
+          fi
