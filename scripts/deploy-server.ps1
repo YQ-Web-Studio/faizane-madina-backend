@@ -2,7 +2,7 @@
 param(
     [string]$ServerHost = "193.123.187.241",
     [string]$ServerUser = "ubuntu",
-    [string]$KeyPath = "$PSScriptRoot/../../ssh-key-2025-11-14.key",
+    [string]$KeyPath = "",
     [string]$RemoteDir = "/home/ubuntu/faizan-e-madina-backend",
     [switch]$SkipBuild,
     [switch]$DryRun
@@ -55,8 +55,15 @@ if ($DryRun) {
 
 # 5. Remote SSH execution
 Write-Host "[5/6] Connecting to $ServerUser@$ServerHost via SSH..." -ForegroundColor Yellow
+if (-not $KeyPath) {
+    if (Test-Path "$PSScriptRoot/../ssh-key-2025-11-14.key") {
+        $KeyPath = "$PSScriptRoot/../ssh-key-2025-11-14.key"
+    } else {
+        $KeyPath = "$PSScriptRoot/../../ssh-key-2025-11-14.key"
+    }
+}
 $ResolvedKey = Resolve-Path $KeyPath
-$RemoteCmd = "cd $RemoteDir && git pull origin main && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
+$RemoteCmd = "cd $RemoteDir && git pull origin $CurrentBranch && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
 
 ssh -i "$ResolvedKey" -o StrictHostKeyChecking=no "$ServerUser@$ServerHost" "$RemoteCmd"
 
