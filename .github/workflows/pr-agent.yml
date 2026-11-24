@@ -31,7 +31,7 @@ jobs:
           github_action_config.pr_actions: "['opened', 'synchronize', 'reopened', 'ready_for_review']"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
-          github_action_config.auto_improve: "true"
+          github_action_config.auto_improve: "false"
           config.enable_auto_approval: "true"
           pr_reviewer.enable_auto_approval: "true"
           pr_reviewer.require_merge_recommendation: "true"
@@ -49,7 +49,7 @@ jobs:
         run: |
           echo "Syncing PR-Agent review status on PR #${PR_NUMBER}..."
           
-          # 1. Record evaluated HEAD commit SHA
+          # 1. Record evaluated HEAD commit SHA before reading review state
           HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
           if [ -z "$HEAD_SHA" ]; then
             echo "❌ Unable to resolve HEAD commit SHA. Aborting review synchronization."
@@ -57,20 +57,21 @@ jobs:
           fi
           echo "Evaluated HEAD commit: ${HEAD_SHA}"
           
-          # 2. Fetch all comment pages and find latest PR-Agent review comment
-          LATEST_COMMENT=$(gh api --paginate "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("pr-agent-review-state")))] | last | .body // ""')
+          # 2. Fetch all comment pages, find latest PR-Agent review comment ID, and read its body
+          LAST_COMMENT_ID=$(gh api --paginate "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("pr-agent-review-state"))) | .id' | tail -n 1)
           
-          if [ -z "$LATEST_COMMENT" ]; then
+          if [ -z "$LAST_COMMENT_ID" ]; then
             echo "⚠️ No PR-Agent review comment found. Skipping review synchronization."
             exit 0
           fi
           
+          LATEST_COMMENT=$(gh api "repos/${{ github.repository }}/issues/comments/${LAST_COMMENT_ID}" --jq .body)
+          
           # 3. Extract JSON review-state payload if present
           JSON_PAYLOAD=$(echo "$LATEST_COMMENT" | sed -n '/<!-- pr-agent-review-state:v1/,/-->/p' | sed '1d;$d')
           
-          # 4. Fetch latest review state by github-actions[bot]
-          REVIEWS=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" --jq '[.[] | select(.user.login == "github-actions[bot]")]')
-          LATEST_STATE=$(echo "$REVIEWS" | jq -r 'last | .state // empty')
+          # 4. Fetch latest review state by github-actions[bot] across all pages
+          LATEST_STATE=$(gh api --paginate "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" --jq '.[] | select(.user.login == "github-actions[bot]") | .state' | tail -n 1)
           echo "Latest Review State: ${LATEST_STATE:-none}"
           
           # 5. Evaluate review verdict with strict affirmative checks
@@ -80,9 +81,14 @@ jobs:
           elif echo "$LATEST_COMMENT" | grep -qi "No concerns found"; then
             REQUEST_CHANGES=false
           elif [ -n "$JSON_PAYLOAD" ] && echo "$JSON_PAYLOAD" | jq -e . >/dev/null 2>&1; then
-            ACTIVE_COUNT=$(echo "$JSON_PAYLOAD" | jq -r --arg sha "$HEAD_SHA" '[.findings[]? | select(.state == "ACTIVE" and .last_seen_head_sha == $sha)] | length' 2>/dev/null || echo 0)
+            ACTIVE_COUNT=$(echo "$JSON_PAYLOAD" | jq -r --arg sha "$HEAD_SHA" '[.findings[]? | select(.state == "ACTIVE" and .last_seen_head_sha == $sha)] | length' 2>/dev/null || echo -1)
             if [ "$ACTIVE_COUNT" -gt 0 ]; then
               REQUEST_CHANGES=true
+            elif [ "$ACTIVE_COUNT" -eq 0 ]; then
+              REQUEST_CHANGES=false
+            else
+              echo "⚠️ Failed to evaluate active findings count from review state payload."
+              exit 0
             fi
           else
             echo "⚠️ Review evidence is ambiguous or unverified. Skipping automated review submission."
@@ -91,7 +97,14 @@ jobs:
           
           echo "Verdict - Request Changes: ${REQUEST_CHANGES}"
           
-          # 6. Submit review bound to the exact evaluated commit_id
+          # 6. Verify PR head commit hasn't moved during review execution
+          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
+          if [ "$CURRENT_HEAD" != "$HEAD_SHA" ]; then
+            echo "⚠️ PR HEAD commit moved from ${HEAD_SHA} to ${CURRENT_HEAD}. Skipping review submission on stale commit."
+            exit 0
+          fi
+          
+          # 7. Submit review bound to the exact evaluated commit_id
           if [ "$REQUEST_CHANGES" = "true" ]; then
             if [ "$LATEST_STATE" != "CHANGES_REQUESTED" ]; then
               echo "Active findings identified. Submitting Changes Requested review bound to ${HEAD_SHA}..."

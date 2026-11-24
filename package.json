@@ -18,7 +18,7 @@
     "test": "vitest run",
     "test:api": "playwright test",
     "deploy:server": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-server.ps1",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -18,8 +18,11 @@ echo "🕌 FMMS Strapi Backend Deployment Pipeline"
 echo "========================================"
 
 echo "[1/5] Checking branch..."
-CURRENT_BRANCH="$(git symbolic-ref --short HEAD)"
+CURRENT_BRANCH="$(git symbolic-ref --short HEAD | tr -d '\r\n')"
 echo "Branch: $CURRENT_BRANCH"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "⚠️ Deploying from non-main branch: $CURRENT_BRANCH. Production is normally deployed from main."
+fi
 
 echo "[2/5] Running TypeScript check..."
 npm run typecheck
@@ -35,7 +38,7 @@ fi
 
 echo "[4/5] Executing remote deployment via SSH..."
 ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" \
-  "cd $REMOTE_DIR && git pull origin \"$CURRENT_BRANCH\" && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
+  "cd $REMOTE_DIR && git fetch origin && git checkout \"$CURRENT_BRANCH\" && git pull origin \"$CURRENT_BRANCH\" && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
 
 echo "[5/5] Checking health..."
 sleep 5

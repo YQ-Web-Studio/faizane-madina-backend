@@ -18,7 +18,7 @@ $BackendDir = Resolve-Path "$PSScriptRoot/.."
 Set-Location $BackendDir
 
 # 1. Branch check
-$CurrentBranch = git symbolic-ref --short HEAD
+$CurrentBranch = (git symbolic-ref --short HEAD).Trim()
 Write-Host "[1/6] Current branch: $CurrentBranch" -ForegroundColor Yellow
 if ($CurrentBranch -ne "main") {
     Write-Warning "Deploying from non-main branch: $CurrentBranch. Production is normally deployed from main."
@@ -27,11 +27,13 @@ if ($CurrentBranch -ne "main") {
 # 2. Quality check
 Write-Host "[2/6] Running TypeScript checks..." -ForegroundColor Yellow
 npm run typecheck
+if ($LASTEXITCODE -ne 0) { throw "TypeScript verification failed with exit code $LASTEXITCODE" }
 
 # 3. Local build
 if (-not $SkipBuild) {
     Write-Host "[3/6] Building Strapi locally (prevents VPS OOM crashes)..." -ForegroundColor Yellow
     npm run build
+    if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
 } else {
     Write-Host "[3/6] Skipping local build (-SkipBuild specified)" -ForegroundColor Gray
 }
@@ -44,6 +46,7 @@ if ($GitStatus) {
     git add dist/
     git commit --no-verify -m "chore(release): compile production artifacts [FMMS]"
     git push origin $CurrentBranch --no-verify
+    if ($LASTEXITCODE -ne 0) { throw "Failed to push distribution artifacts to origin with exit code $LASTEXITCODE" }
 } else {
     Write-Host "No changes in dist/, proceeding." -ForegroundColor Green
 }
@@ -63,9 +66,10 @@ if (-not $KeyPath) {
     }
 }
 $ResolvedKey = Resolve-Path $KeyPath
-$RemoteCmd = "cd $RemoteDir && git pull origin $CurrentBranch && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
+$RemoteCmd = "cd $RemoteDir && git fetch origin && git checkout $CurrentBranch && git pull origin $CurrentBranch && npm install --omit=dev && pm2 reload ecosystem.config.js --update-env && pm2 status"
 
 ssh -i "$ResolvedKey" -o StrictHostKeyChecking=no "$ServerUser@$ServerHost" "$RemoteCmd"
+if ($LASTEXITCODE -ne 0) { throw "Remote SSH execution failed with exit code $LASTEXITCODE" }
 
 # 6. HTTP Health verification
 Write-Host "[6/6] Verifying live HTTP health endpoint..." -ForegroundColor Yellow
