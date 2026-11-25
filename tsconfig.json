@@ -37,6 +37,10 @@
     "src/admin/",
     // Do not include test files
     "**/*.test.*",
+    "**/*.spec.*",
+    "tests/**",
+    "playwright.config.ts",
+    "vitest.config.ts",
     // Do not include plugins in the server compilation
     "src/plugins/**"
   ]
