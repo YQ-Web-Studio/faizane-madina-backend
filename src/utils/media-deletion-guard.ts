@@ -92,15 +92,29 @@ export function formatBlockedDeletionMessage(
 }
 
 /**
+ * Resolves the file IDs a delete selector actually matches (any `where` shape).
+ */
+export type MatchingFileIdResolver = (where: any) => Promise<(number | string)[]>;
+
+/**
  * Checks whether the targeted file(s) are actively linked to any content type
  * in the `files_related_mph` junction table. If linked, throws an ApplicationError
  * to abort the deletion transaction.
+ *
+ * When `resolveMatchingIds` is supplied it is used to find the files the selector
+ * really matches, so selectors the static extractor cannot parse (e.g. mixed `$or`
+ * clauses) cannot bypass the guard. Without it, IDs are extracted statically.
  */
 export async function guardMediaDeletion(
   dbConnection: any,
-  where: any
+  where: any,
+  resolveMatchingIds?: MatchingFileIdResolver
 ): Promise<void> {
-  const fileIds = extractTargetFileIds(where);
+  if (!where || typeof where !== "object") return;
+
+  const fileIds = resolveMatchingIds
+    ? [...new Set(await resolveMatchingIds(where))]
+    : extractTargetFileIds(where);
   if (fileIds.length === 0) return;
 
   const hasTable = await dbConnection.schema.hasTable("files_related_mph");
@@ -114,3 +128,27 @@ export async function guardMediaDeletion(
     throw new errors.ApplicationError(formatBlockedDeletionMessage(relations));
   }
 }
+
+const GUARDED = Symbol.for("fmms.mediaDeletionGuard");
+
+/**
+ * Wraps the Strapi upload service's `remove` so the guard runs BEFORE the upload
+ * provider deletes the binary and its formats. Strapi's `upload.remove()` calls
+ * `provider.delete()` before the database delete, so a database lifecycle hook
+ * alone would reject the request only after the asset is already gone.
+ * Safe to call more than once.
+ */
+export function guardUploadServiceRemoval(
+  uploadService: { remove: (file: any, ...rest: any[]) => Promise<any> },
+  dbConnection: any
+): void {
+  if ((uploadService as any)[GUARDED]) return;
+
+  const originalRemove = uploadService.remove.bind(uploadService);
+  uploadService.remove = async (file: any, ...rest: any[]) => {
+    await guardMediaDeletion(dbConnection, { id: file?.id });
+    return originalRemove(file, ...rest);
+  };
+  (uploadService as any)[GUARDED] = true;
+}
+

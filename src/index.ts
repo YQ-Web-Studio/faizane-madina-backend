@@ -1,6 +1,6 @@
 // @ts-ignore
 import type { Core } from '@strapi/strapi';
-import { guardMediaDeletion } from './utils/media-deletion-guard';
+import { guardMediaDeletion, guardUploadServiceRemoval } from './utils/media-deletion-guard';
 
 export default {
   /**
@@ -31,15 +31,40 @@ export default {
    */
   bootstrap({ strapi }: { strapi: Core.Strapi }) {
     // FMMS-2: Guard against accidental deletion of media assets linked to active content
+
+    // Primary guard: runs before the upload provider deletes the binary/formats.
+    guardUploadServiceRemoval(
+      strapi.plugin('upload').service('upload'),
+      strapi.db.connection
+    );
+
+    // Secondary guard: database-level protection for any delete path that bypasses
+    // the upload service. IDs are resolved from the real selector so any `where`
+    // shape is covered.
+    const resolveMatchingFileIds = async (where: any) => {
+      const rows = await strapi.db
+        .query('plugin::upload.file')
+        .findMany({ where, select: ['id'] });
+      return rows.map((row: { id: number | string }) => row.id);
+    };
+
     strapi.db.lifecycles.subscribe({
       models: ['plugin::upload.file'],
 
       async beforeDelete(event) {
-        await guardMediaDeletion(strapi.db.connection, event.params?.where);
+        await guardMediaDeletion(
+          strapi.db.connection,
+          event.params?.where,
+          resolveMatchingFileIds
+        );
       },
 
       async beforeDeleteMany(event) {
-        await guardMediaDeletion(strapi.db.connection, event.params?.where);
+        await guardMediaDeletion(
+          strapi.db.connection,
+          event.params?.where,
+          resolveMatchingFileIds
+        );
       },
     });
   },

@@ -3,6 +3,7 @@ import {
   extractTargetFileIds,
   formatBlockedDeletionMessage,
   guardMediaDeletion,
+  guardUploadServiceRemoval,
   type RelatedMorphRecord
 } from "../../src/utils/media-deletion-guard";
 
@@ -120,5 +121,111 @@ describe("Media Deletion Guard", () => {
         guardMediaDeletion(mockDbConnection, { id: 1 })
       ).resolves.toBeUndefined();
     });
+
+    it("uses resolveMatchingIds to resolve and block deletion for complex $or selectors matching linked files", async () => {
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue([
+          { file_id: 101, related_id: 1, related_type: "api::announcement.announcement", field: "images" }
+        ])
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const complexWhere = {
+        $or: [
+          { name: { $contains: "flyer" } },
+          { mime: "image/png" }
+        ]
+      };
+
+      const mockResolver = vi.fn().mockResolvedValue([101, 102]);
+
+      await expect(
+        guardMediaDeletion(mockDbConnection, complexWhere, mockResolver)
+      ).rejects.toThrow(/Deletion blocked/);
+
+      expect(mockResolver).toHaveBeenCalledWith(complexWhere);
+      expect(mockKnex.whereIn).toHaveBeenCalledWith("file_id", [101, 102]);
+    });
+
+    it("allows deletion with complex selector when resolveMatchingIds returns unlinked files", async () => {
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue([])
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const mockResolver = vi.fn().mockResolvedValue([201]);
+
+      await expect(
+        guardMediaDeletion(mockDbConnection, { folder: null }, mockResolver)
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("guardUploadServiceRemoval", () => {
+    it("blocks removal of a linked asset and does not invoke original uploadService.remove", async () => {
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue([
+          { file_id: 50, related_id: 2, related_type: "api::gallery.gallery", field: "images" }
+        ])
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const mockRemove = vi.fn().mockResolvedValue({ id: 50 });
+      const uploadService = { remove: mockRemove };
+
+      guardUploadServiceRemoval(uploadService, mockDbConnection);
+
+      await expect(uploadService.remove({ id: 50 })).rejects.toThrow(/Deletion blocked/);
+      expect(mockRemove).not.toHaveBeenCalled();
+    });
+
+    it("allows removal of an orphaned asset and calls original uploadService.remove", async () => {
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue([])
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const mockRemove = vi.fn().mockResolvedValue({ id: 99 });
+      const uploadService = { remove: mockRemove };
+
+      guardUploadServiceRemoval(uploadService, mockDbConnection);
+
+      const result = await uploadService.remove({ id: 99 });
+      expect(result).toEqual({ id: 99 });
+      expect(mockRemove).toHaveBeenCalledWith({ id: 99 });
+    });
+
+    it("is idempotent when called multiple times on the same uploadService", () => {
+      const mockDbConnection = vi.fn() as any;
+      const mockRemove = vi.fn();
+      const uploadService = { remove: mockRemove };
+
+      guardUploadServiceRemoval(uploadService, mockDbConnection);
+      const wrappedRemove = uploadService.remove;
+
+      guardUploadServiceRemoval(uploadService, mockDbConnection);
+      expect(uploadService.remove).toBe(wrappedRemove);
+    });
   });
 });
+
