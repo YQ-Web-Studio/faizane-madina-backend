@@ -39,8 +39,15 @@ export default {
     );
 
     // Secondary guard: database-level protection for any delete path that bypasses
-    // the upload service. IDs are resolved from the real selector so any `where`
-    // shape is covered.
+    // the upload service. Single deletes resolve one target record (`findOne`) to
+    // match Strapi's `delete` behavior; bulk deletes resolve all matching records.
+    const resolveSingleMatchingFileId = async (where: any) => {
+      const row = await strapi.db
+        .query('plugin::upload.file')
+        .findOne({ where, select: ['id'] });
+      return row ? [row.id] : [];
+    };
+
     const resolveMatchingFileIds = async (where: any) => {
       const rows = await strapi.db
         .query('plugin::upload.file')
@@ -55,7 +62,7 @@ export default {
         await guardMediaDeletion(
           strapi.db.connection,
           event.params?.where,
-          resolveMatchingFileIds
+          resolveSingleMatchingFileId
         );
       },
 
@@ -63,7 +70,8 @@ export default {
         await guardMediaDeletion(
           strapi.db.connection,
           event.params?.where,
-          resolveMatchingFileIds
+          resolveMatchingFileIds,
+          { isBulk: true }
         );
       },
     });

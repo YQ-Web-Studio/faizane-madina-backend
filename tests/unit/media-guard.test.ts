@@ -169,6 +169,75 @@ describe("Media Deletion Guard", () => {
         guardMediaDeletion(mockDbConnection, { folder: null }, mockResolver)
       ).resolves.toBeUndefined();
     });
+
+    it("does not block single delete when selector matches an unlinked target alongside a linked file", async () => {
+      // Simulate a selector matching unlinked file 41 and linked file 42 where
+      // Strapi's single-record delete (`findOne`) selects unlinked file 41.
+      const linkedRelations: RelatedMorphRecord[] = [
+        { file_id: 42, related_id: 1, related_type: "api::announcement.announcement", field: "images" }
+      ];
+      let queriedIds: (number | string)[] = [];
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn((_col: string, ids: (number | string)[]) => {
+          queriedIds = ids;
+          return mockKnex;
+        }),
+        select: vi.fn(() =>
+          Promise.resolve(linkedRelations.filter((r) => queriedIds.includes(r.file_id)))
+        )
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const singleRecordResolver = vi.fn().mockResolvedValue([41]);
+
+      await expect(
+        guardMediaDeletion(mockDbConnection, { mime: "image/png" }, singleRecordResolver)
+      ).resolves.toBeUndefined();
+
+      expect(singleRecordResolver).toHaveBeenCalledWith({ mime: "image/png" });
+      expect(mockKnex.whereIn).toHaveBeenCalledWith("file_id", [41]);
+    });
+
+    it("normalizes omitted where selector to {} for bulk deletes and blocks if any file is linked", async () => {
+      const mockKnex = {
+        schema: {
+          hasTable: vi.fn().mockResolvedValue(true)
+        },
+        whereIn: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue([
+          { file_id: 42, related_id: 1, related_type: "api::announcement.announcement", field: "images" }
+        ])
+      };
+      const mockDbConnection = vi.fn(() => mockKnex) as any;
+      mockDbConnection.schema = mockKnex.schema;
+
+      const bulkResolver = vi.fn().mockResolvedValue([41, 42]);
+
+      await expect(
+        guardMediaDeletion(mockDbConnection, undefined, bulkResolver, { isBulk: true })
+      ).rejects.toThrow(/Deletion blocked/);
+
+      expect(bulkResolver).toHaveBeenCalledWith({});
+      expect(mockKnex.whereIn).toHaveBeenCalledWith("file_id", [41, 42]);
+    });
+
+    it("skips resolver for invalid or omitted single-delete selectors", async () => {
+      const mockDbConnection = vi.fn() as any;
+      const singleResolver = vi.fn();
+
+      await expect(
+        guardMediaDeletion(mockDbConnection, undefined, singleResolver)
+      ).resolves.toBeUndefined();
+      await expect(
+        guardMediaDeletion(mockDbConnection, null, singleResolver)
+      ).resolves.toBeUndefined();
+
+      expect(singleResolver).not.toHaveBeenCalled();
+    });
   });
 
   describe("guardUploadServiceRemoval", () => {

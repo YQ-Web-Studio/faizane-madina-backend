@@ -96,6 +96,15 @@ export function formatBlockedDeletionMessage(
  */
 export type MatchingFileIdResolver = (where: any) => Promise<(number | string)[]>;
 
+export interface GuardMediaDeletionOptions {
+  /**
+   * When true (bulk deletes), an omitted (`undefined` / `null`) selector is
+   * normalized to `{}` so `resolveMatchingIds` inspects all targeted records
+   * instead of bypassing the guard.
+   */
+  isBulk?: boolean;
+}
+
 /**
  * Checks whether the targeted file(s) are actively linked to any content type
  * in the `files_related_mph` junction table. If linked, throws an ApplicationError
@@ -108,13 +117,17 @@ export type MatchingFileIdResolver = (where: any) => Promise<(number | string)[]
 export async function guardMediaDeletion(
   dbConnection: any,
   where: any,
-  resolveMatchingIds?: MatchingFileIdResolver
+  resolveMatchingIds?: MatchingFileIdResolver,
+  options?: GuardMediaDeletionOptions
 ): Promise<void> {
-  if (!where || typeof where !== "object") return;
+  const effectiveWhere =
+    (where === undefined || where === null) && options?.isBulk ? {} : where;
+
+  if (!effectiveWhere || typeof effectiveWhere !== "object") return;
 
   const fileIds = resolveMatchingIds
-    ? [...new Set(await resolveMatchingIds(where))]
-    : extractTargetFileIds(where);
+    ? [...new Set(await resolveMatchingIds(effectiveWhere))]
+    : extractTargetFileIds(effectiveWhere);
   if (fileIds.length === 0) return;
 
   const hasTable = await dbConnection.schema.hasTable("files_related_mph");
