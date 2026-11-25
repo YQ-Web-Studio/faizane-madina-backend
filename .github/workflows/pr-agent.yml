@@ -6,123 +6,16 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  pr_agent:
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
-    steps:
-      - name: PR Agent Action
-        uses: Codium-ai/pr-agent@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.PR_AGENT_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
-          config.model: "gemini/gemini-flash-latest"
-          config.custom_model_max_tokens: "1000000"
-          config.fallback_models: '["gemini/gemini-3.5-flash", "gemini/gemini-3.8-flash"]'
-          GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
-          github_action_config.pr_actions: "['opened', 'synchronize', 'reopened', 'ready_for_review']"
-          github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "false"
-          github_action_config.auto_improve: "false"
-          config.enable_auto_approval: "true"
-          pr_reviewer.enable_auto_approval: "true"
-          pr_reviewer.require_merge_recommendation: "true"
-          pr_reviewer.require_risk_assessment: "true"
-          pr_reviewer.inline_code_comments: "true"
-          pr_reviewer.inline_key_issues: "true"
-          pr_code_suggestions.committable_code_suggestions: "true"
-          pr_code_suggestions.commitable_code_suggestions: "true"
-
-      - name: Sync Review Status (Request Changes or Approve)
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          echo "Syncing PR-Agent review status on PR #${PR_NUMBER}..."
-          
-          # 1. Record evaluated HEAD commit SHA before reading review state
-          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
-          if [ -z "$HEAD_SHA" ]; then
-            echo "❌ Unable to resolve HEAD commit SHA. Aborting review synchronization."
-            exit 1
-          fi
-          echo "Evaluated HEAD commit: ${HEAD_SHA}"
-          
-          # 2. Fetch all comment pages, find latest PR-Agent review comment ID, and read its body
-          LAST_COMMENT_ID=$(gh api --paginate "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("pr-agent-review-state"))) | .id' | tail -n 1)
-          
-          if [ -z "$LAST_COMMENT_ID" ]; then
-            echo "⚠️ No PR-Agent review comment found. Skipping review synchronization."
-            exit 0
-          fi
-          
-          LATEST_COMMENT=$(gh api "repos/${{ github.repository }}/issues/comments/${LAST_COMMENT_ID}" --jq .body)
-          
-          # 3. Extract JSON review-state payload if present
-          JSON_PAYLOAD=$(echo "$LATEST_COMMENT" | sed -n '/<!-- pr-agent-review-state:v1/,/-->/p' | sed '1d;$d')
-          
-          # 4. Fetch latest review state by github-actions[bot] across all pages
-          LATEST_STATE=$(gh api --paginate "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" --jq '.[] | select(.user.login == "github-actions[bot]") | .state' | tail -n 1)
-          echo "Latest Review State: ${LATEST_STATE:-none}"
-          
-          # 5. Evaluate review verdict with strict affirmative checks
-          REQUEST_CHANGES=false
-          if echo "$LATEST_COMMENT" | grep -Eqi "Require changes|Risk level</strong>:\s*(High|Critical)"; then
-            REQUEST_CHANGES=true
-          elif echo "$LATEST_COMMENT" | grep -qi "No concerns found"; then
-            REQUEST_CHANGES=false
-          elif [ -n "$JSON_PAYLOAD" ] && echo "$JSON_PAYLOAD" | jq -e . >/dev/null 2>&1; then
-            ACTIVE_COUNT=$(echo "$JSON_PAYLOAD" | jq -r --arg sha "$HEAD_SHA" '[.findings[]? | select(.state == "ACTIVE" and .last_seen_head_sha == $sha)] | length' 2>/dev/null || echo -1)
-            if [ "$ACTIVE_COUNT" -gt 0 ]; then
-              REQUEST_CHANGES=true
-            elif [ "$ACTIVE_COUNT" -eq 0 ]; then
-              REQUEST_CHANGES=false
-            else
-              echo "⚠️ Failed to evaluate active findings count from review state payload."
-              exit 0
-            fi
-          else
-            echo "⚠️ Review evidence is ambiguous or unverified. Skipping automated review submission."
-            exit 0
-          fi
-          
-          echo "Verdict - Request Changes: ${REQUEST_CHANGES}"
-          
-          # 6. Verify PR head commit hasn't moved during review execution
-          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
-          if [ "$CURRENT_HEAD" != "$HEAD_SHA" ]; then
-            echo "⚠️ PR HEAD commit moved from ${HEAD_SHA} to ${CURRENT_HEAD}. Skipping review submission on stale commit."
-            exit 0
-          fi
-          
-          # 7. Submit review bound to the exact evaluated commit_id
-          if [ "$REQUEST_CHANGES" = "true" ]; then
-            if [ "$LATEST_STATE" != "CHANGES_REQUESTED" ]; then
-              echo "Active findings identified. Submitting Changes Requested review bound to ${HEAD_SHA}..."
-              gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" \
-                -f event="REQUEST_CHANGES" \
-                -f commit_id="$HEAD_SHA" \
-                -f body="🤖 **PR-Agent Review Verdict: Changes Requested**"$'\n\n'"Actionable concerns or potential regressions were identified in this pull request. Please review the inline suggestions and comments above, apply the fixes, and push an update for re-evaluation."
-            else
-              echo "Review already in CHANGES_REQUESTED state."
-            fi
-          else
-            if [ "$LATEST_STATE" != "APPROVED" ]; then
-              echo "No active concerns detected. Submitting Approval review bound to ${HEAD_SHA}..."
-              gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" \
-                -f event="APPROVE" \
-                -f commit_id="$HEAD_SHA" \
-                -f body="🤖 **PR-Agent Review Verdict: Approved**"$'\n\n'"All checks, quality gates, and code review criteria passed with no actionable concerns found."
-            else
-              echo "Review already in APPROVED state."
-            fi
-          fi
+  review:
+    uses: YQ-Web-Studio/.github/.github/workflows/pr-review.yml@main
+    secrets: inherit
